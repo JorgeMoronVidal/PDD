@@ -213,7 +213,7 @@ void GMSolver::Solve(Eigen::VectorXd X0, double c2, Stencil stencil,
 Solve(X0, INFINITY, c2, stencil, G_j, G, B, Ntray);
 }
 void GMSolver::Solve(Eigen::VectorXd X0, double T_start, double c2,
-             Stencil stencil, std::vector<int> & G_j,
+             Stencil & stencil, std::vector<int> & G_j,
              std::vector<double> & G, double & B,  unsigned int Ntray){
     for(unsigned int i = 0; i < 10; i++) sums[i] = 0.0;
     increment.resize(X0.size());
@@ -226,7 +226,8 @@ void GMSolver::Solve(Eigen::VectorXd X0, double T_start, double c2,
     //G and B are emptied
     G_j.clear();
     G.clear();
-    double b, B = 0.0;
+    double b;
+    B = 0.0;
     stencil.Reset();
     /*Control variable 
     -0 if trayectory still inside
@@ -234,10 +235,10 @@ void GMSolver::Solve(Eigen::VectorXd X0, double T_start, double c2,
     -2 if trayectory exits by problem's boundary*/
     int16_t control;
     Reset(X0,T_start);
-    if(bvp.boundary.Dist(stencil.global_parameters, X0, E_P, N) >= -1E-06){
+    if(bvp.boundary.Dist(stencil.stencil_parameters, X0, E_P, N) >= -1E-06){
                 B = bvp.g.Value(X0,t);
     } else{
-      for(int i = 0; i < N_trayectories; i++){
+      for(int i = 0; i < Ntray; i++){
         Reset(X0,T_start);
         control = 0;
         do{
@@ -245,40 +246,35 @@ void GMSolver::Solve(Eigen::VectorXd X0, double T_start, double c2,
             N_rngcalls += X0.size();
             VR_CV_Step();
             if(t <= 0){
-                    control = 3;
-                    break;
+                control = 3;
             }
             if(bvp.boundary.Dist(params, X, E_P, N) > -0.5826*(N.transpose()*sigma).norm()*sqrth){
-                    control = 2;
-                    break;
-                }
+                control = 2;
+                break;
+            }
             if(sten_boundary.Dist(stencil.stencil_parameters, X, E_P, N) > -0.5826*(N.transpose()*sigma).norm()*sqrth){
-                    control = 1;
-                    break;
+                control = 1;
+                break;
             }
         } while(control == 0);
         
-        switch (control) {
-        
-                case 1: 
-                    stencil.G_update(E_P,Y,bvp,c2);
-                    b += Z + xi;
-                break;
-        
-                case 2:
-                    b += Z + xi + Y*bvp.g.Value(E_P,t);
-                break;
-
-                case 3:
-                    b += Z + xi + Y*bvp.p.Value(X,t);
-                break;
-        
-                default : 
+        switch (control) {        
+            case 1: 
+                stencil.G_update(E_P,Y,bvp,c2);
+                b += Z + xi;
+            break;        
+            case 2:
+                b += Z + xi + Y*bvp.g.Value(E_P,t);
+            break;
+            case 3:
+                b += Z + xi + Y*bvp.p.Value(X,t);
+            break;
+            default : 
                 std::cout << "Something went wrong while solving";
-            }
+        }
       }
-      stencil.G_return_withrep(G_j, G, N_trayectories);
-      B = b/N_trayectories;
+      stencil.G_return_withrep(G_j, G, Ntray);
+      B = b/Ntray;
   }
 }
 

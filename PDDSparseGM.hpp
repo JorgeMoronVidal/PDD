@@ -2,7 +2,7 @@
 #ifndef PDDSPARSEGM
 #define PDDSPARSEGM
 //Fraction of the interface the stencil is elongated
-#define STEN_ELONG 0.5
+#define STEN_ELONG 0.0
 //MPI TAGS
 #define REQUEST_NODE 1
 #define REPLY_NODE 2
@@ -30,6 +30,7 @@
 #include "interface.hpp"
 #include "stencil.hpp"
 #include "subdomain.hpp"
+#include<eigen3/Eigen/SparseLU>
 #include <mpi.h>
 #include <fstream>
 
@@ -83,7 +84,7 @@ class PDDSparseGM{
         /*
           -N is the initial number of trayectories 
         */
-       int N;
+       int N, nNodes;
        /*Stencil of the node*/
        Stencil node_stencil;
        /*Position of the Node being solver*/
@@ -108,6 +109,8 @@ class PDDSparseGM{
        void Send_G_B(void);
        /*Receive G matrix and B Matrix*/
        void Receive_G_B(void);
+       /*Having G and B as triplets, computes the solution for the PDDS problem*/
+       void Compute_Solution(BVP bvp);
        /*Position of a given node*/
        Eigen::VectorXd Node_Position(int node_index);
        /*Prints metadata file*/

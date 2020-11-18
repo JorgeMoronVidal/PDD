@@ -370,7 +370,6 @@ void PDDSparseGM::Fullfill_interfaces(void){
     cross.clear();
     for(int i = 0; i < iN[0] - 1; i++){
         for(int j = 0; j <= iN[1]*2 - 2; j += 2){
-
             stvaux.clear();
             stvaux.push_back(i);
             stvaux.push_back(j);
@@ -412,6 +411,8 @@ void PDDSparseGM::Fullfill_interfaces(void){
             }
         }
     }
+    nNodes = (int)cent;
+    std::cout << "nNodes is " << nNodes << std::endl;
     //Loop over the points in the system
     for(std::vector<Interface>::iterator it = interfaces.begin();
     it != interfaces.end();
@@ -431,7 +432,6 @@ void PDDSparseGM::Fullfill_interfaces(void){
 }
 void PDDSparseGM::Solve(BVP bvp){
     bool done=true;
-    int nNodes=iN[0]*(iN[1]-1)*nN[0] + iN[1]*(iN[0]-1)*nN[1];
     if(myid==server) Print_Problem();
     //Compute the PDDSparse Matrix
     if(myid==server){
@@ -443,34 +443,16 @@ void PDDSparseGM::Solve(BVP bvp){
         for(int node_index = 0; node_index < nNodes; node_index++){
             work_control[1] = 1;
             Send_Node(node_index);
+            Send_Stencil_Data(work_control[0]);
         }
         //G and B are received from the workers
         for(int process = 0; process < server; process++){
              Receive_G_B();
         }
-        //COMPUTE SOLUTION
-        //PRINT SOLUTION
+        Compute_Solution(bvp);
         printf("Process %d ended its work.\n",myid);
     } else {
-        clock_t tic, toc;
-        //Boundary Value problem
-        BVP bvp;
-        std::map<std::string, pfscalar> scalar_init;
-        std::map<std::string, pfvector> vector_init;
-        std::map<std::string, pfmatrix> matrix_init;
-        std::map<std::string, pfscalarN> scalarN_init;
-        std::map<std::string, std::string> string_init;
-        //BVP initialization 
-        scalar_init["f"] = Equation_f;
-        vector_init["F"] = Equation_F;
-        scalar_init["c"] = Equation_c;
-        scalar_init["u"] = Equation_u;
-        scalar_init["g"] = Equation_g;
-        scalar_init["p"] = Equation_p;
-        vector_init["b"] = Equation_b;
-        matrix_init["sigma"] = Equation_sigma;
-        bvp.Boundary_init(Rectangle2D, Stopping);
-        bvp.BVP_init(2,scalar_init,scalarN_init,vector_init, matrix_init,string_init, Equation_RBF);
+        double start = MPI_Wtime();
         //G and B storage vectors for each node
         double B_temp;
         std::vector<double> G_temp;
@@ -481,12 +463,12 @@ void PDDSparseGM::Solve(BVP bvp){
         do{
             done = Receive_Node();
             if(!done){
-                tic = clock();
                 G_temp.clear();
                 B_temp = 0.0;
                 G_j_temp.clear();
                 G_temp.clear();
-                stencil.Reset();
+                stencil = Recieve_Stencil_Data();
+                stencil.Compute_ipsi(bvp,c2);
                 solver.Solve(position,c2,stencil,G_j_temp,G_temp,B_temp,N);
                 B.push_back(B_temp);
                 B_i.push_back(work_control[0]);
@@ -497,7 +479,11 @@ void PDDSparseGM::Solve(BVP bvp){
                 }
             }
         }while(!done);
+        printf("Process %d is done solving nodes \n", myid);
         Send_G_B();
+        printf("Process %d is done sending G \n", myid);
+        double end = MPI_Wtime();
+        printf("Process %d used %f  hours \n", myid, (start-end)/3600);
     }
     MPI_Finalize();
 }
@@ -943,39 +929,41 @@ Stencil PDDSparseGM::Recieve_Stencil_Data(void){
 void PDDSparseGM::Send_G_B(void){
     work_control[0] = (int) G.size();
     work_control[1] = (int) B.size();
-    MPI_Send(work_control, 2, MPI_INT, server, REQUEST, world);
+    MPI_Send(work_control, 2, MPI_INT, server, REQUEST_NODE, world);
     //G_i is sent
     int *G_i_aux;
-    G_i_aux = int[work_control[0]];
-    for(int i = 0; i < work_control[0]) G_i_aux[i] = G_i[i];
+    G_i_aux = new int[work_control[0]];
+    for(int i = 0; i < work_control[0]; i++) G_i_aux[i] = G_i[i];
     G_i.resize(0);
     MPI_Send(G_i_aux, work_control[0], MPI_INT, server, TAG_Gi, world);
     delete G_i_aux;
     //G_j is sent
     int *G_j_aux;
-    G_j_aux = int[work_control[0]];
+    G_j_aux = new int[work_control[0]];
+    for(int i = 0; i < work_control[0]; i++) G_j_aux[i] = G_j[i];
     G_j.resize(0);
-    for(int i = 0; i < work_control[0]) G_j_aux[i] = G_j[i];
     MPI_Send(G_j_aux, work_control[0], MPI_INT, server, TAG_Gj, world);
     delete G_j_aux;
     //G_val is sent
     double *G_aux;
     G_aux = new double[work_control[0]];
-    for(int i = 0; i < work_control[0]) G_aux[i] = G[i];
+    for(int i = 0; i < work_control[0]; i++){
+         G_aux[i] = G[i];
+    }
     G.resize(0);
     MPI_Send(G_aux, work_control[0], MPI_DOUBLE, server,TAG_Gval, world);
     delete G_aux;
     //B_i is sent
     int *B_i_aux;
-    B_i_aux = int[work_control[1]];
-    for(int i = 0; i < work_control[1]) B_i_aux[i] = B_i[i];
+    B_i_aux = new int[work_control[1]];
+    for(int i = 0; i < work_control[1]; i++) B_i_aux[i] = B_i[i];
     B_i.resize(0);
     MPI_Send(B_i_aux, work_control[1], MPI_INT, server, TAG_Bi, world);
     delete B_i_aux;
     //B is sent
     double *B_aux;
-    B_aux = double[work_control[1]];
-    for(int i = 0; i < work_control[1]) B_aux[i] = B[i];
+    B_aux = new double[work_control[1]];
+    for(int i = 0; i < work_control[1]; i++) B_aux[i] = B[i];
     B.resize(0);
     MPI_Send(B_aux, work_control[1], MPI_DOUBLE, server, TAG_Bval, world);
     delete B_aux;
@@ -985,12 +973,12 @@ void PDDSparseGM::Send_G_B(void){
 void PDDSparseGM::Receive_G_B(void){
     //It ends worker process solving
     MPI_Recv(work_control, 2, MPI_INT, MPI_ANY_SOURCE, 
-    REQUEST, world, &status);
+    REQUEST_NODE, world, &status);
     work_control[0] = 0;
-    work_control[1] = 1;
-    MPI_Send(work_control, 2, MPI_INT, status.MPI_SOURCE, REPLY, world);
+    work_control[1] = 0;
+    MPI_Send(work_control, 2, MPI_INT, status.MPI_SOURCE, REPLY_NODE, world);
     //The server accumulates the values of G and B
-    MPI_Recv(work_control, 2, MPI_INT, status.MPI_SOURCE, REQUEST, world, &status);
+    MPI_Recv(work_control, 2, MPI_INT, status.MPI_SOURCE, REQUEST_NODE, world, &status);
     G.resize(work_control[0]);
     G_i.resize(work_control[0]);
     G_j.resize(work_control[0]);
@@ -1002,13 +990,13 @@ void PDDSparseGM::Receive_G_B(void){
     for(int i = 0; i < work_control[0]; i++) G_i[i] = G_i_aux[i];
     delete G_i_aux;
     //G_j is received
-    G_j_aux = new int[work_control[1]];
-    MPI_Recv(G_j, work_control[0], MPI_INT, status.MPI_SOURCE, TAG_Gj, world, &status);
+    G_j_aux = new int[work_control[0]];
+    MPI_Recv(G_j_aux, work_control[0], MPI_INT, status.MPI_SOURCE, TAG_Gj, world, &status);
     for(int i = 0; i < work_control[0]; i++) G_j[i] = G_j_aux[i];
     delete G_j_aux;
     //G is received
-    G_aux = new double[work_control[0]]
-    MPI_Recv(G_aux, work_control[0], MPI_Double, status.MPI_SOURCE, TAG_Gval, world, &status);
+    G_aux = new double[work_control[0]];
+    MPI_Recv(G_aux, work_control[0], MPI_DOUBLE, status.MPI_SOURCE, TAG_Gval, world, &status);
     for(int i = 0; i < work_control[0]; i++) G[i] = G_aux[i];
     delete G_aux;
     //Triplets vector is fullfilled
@@ -1029,11 +1017,11 @@ void PDDSparseGM::Receive_G_B(void){
     delete B_i_aux;
     //B is received
     B_aux = new double[work_control[1]];
-    MPI_Recv(B, work_control[1], MPI_FLOAT, status.MPI_SOURCE, TAG_Bval, world, &status);
+    MPI_Recv(B_aux, work_control[1], MPI_DOUBLE, status.MPI_SOURCE, TAG_Bval, world, &status);
     for(int i = 0; i < work_control[1]; i++) B[i] = B_aux[i];
     delete B_aux;
     for(int j = 0; j < work_control[1]; j++){
-        T_vec_B.push_back(T(B_i[j], 0, B_val[j]));
+        T_vec_B.push_back(T(B_i[j], 0, B[j]));
     }
 }
 Eigen::VectorXd PDDSparseGM::Node_Position(int node_index){
@@ -1047,6 +1035,58 @@ Eigen::VectorXd PDDSparseGM::Node_Position(int node_index){
         }
     }
     return output;
+}
+void PDDSparseGM::Compute_Solution(BVP bvp){
+    Eigen::SparseMatrix<double> G_sparse, I_sparse, B_sparse;
+    unsigned int size = T_vec_B.size();
+    I_sparse.resize(size, size);
+    I_sparse.setIdentity();
+    G_sparse.resize(size, size);
+    B_sparse.resize(size, 1);
+    G_sparse.setFromTriplets(T_vec_G.begin(),T_vec_G.end());
+    T_vec_G.resize(0);
+    G_sparse+=I_sparse;
+    I_sparse.resize(0,0);
+    FILE *ofile;
+    ofile = fopen("Output/Debug/G.csv","w");
+    fprintf(ofile, "G_i,G_j,G_ij\n");
+    for (int k=0; k<G_sparse.outerSize(); ++k)
+        for (Eigen::SparseMatrix<double>::InnerIterator it(G_sparse,k); it; ++it)
+        {
+            fprintf(ofile,"%ld,%ld,%e\n",it.row(),it.col(),it.value());
+        }
+    fclose(ofile);
+    B_sparse.setFromTriplets(T_vec_B.begin(), T_vec_B.end());
+    T_vec_B.resize(0);
+    ofile = fopen("Output/Debug/B.csv","w");
+    fprintf(ofile, "B_i,B_j,B_ij\n");
+    for (int k=0; k<B_sparse.outerSize(); ++k)
+        for (Eigen::SparseMatrix<double>::InnerIterator it(B_sparse,k); it; ++it)
+        {
+            fprintf(ofile,"%ld,%ld,%e\n",it.row(),it.col(),it.value());
+        }
+    fclose(ofile);
+    Eigen::VectorXd ud,Bd;
+    Bd = Eigen::VectorXd(B_sparse);
+    B_sparse.resize(0,0);
+    Eigen::SparseLU<Eigen::SparseMatrix<double> > solver_LU;
+    solver_LU.compute(G_sparse);
+    solver_LU.factorize(G_sparse);
+    ud = solver_LU.solve(Bd);
+    Eigen::BiCGSTAB<Eigen::SparseMatrix<double> > solver_IT;
+    solver_IT.compute(G_sparse);
+    ud = solver_IT.solveWithGuess(Bd,ud);
+    ofile = fopen("Output/solution.csv","w");
+    fprintf(ofile,"Knot_index,x,y,sol_analytic,sol_PDDS,err,rerr\n");
+    double sol, err, rerr;
+    for(int i = 0; i< (int)ud.size(); i++){
+        sol = bvp.u.Value(Node_Position(i),T_start);
+        err = ud(i) - sol;
+        rerr = fabs(err)/sol;
+        fprintf(ofile,"%d,%f,%f,%f,%f,%f,%f\n",i,Node_Position(i)[0],Node_Position(i)[1],
+        sol,ud(i),err,rerr);
+    }
+    fclose(ofile);
 }
 void PDDSparseGM::Print_Interface(void){
     if(myid==server){

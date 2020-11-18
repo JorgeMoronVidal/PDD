@@ -49,7 +49,7 @@ double Equation_RBF(Eigen::VectorXd x , Eigen::VectorXd xj, double c2){
     double r2 = pow(x(0)-xj(0),2) + pow(x(1)-xj(1),2);
     return sqrt(r2 + c2);
 }
-bool Stopping(Eigen::VectorXd position){
+/*bool Stopping(Eigen::VectorXd position){
     bool stop = true;
     return stop;
-}
+}*/

@@ -16,4 +16,4 @@ double Equation_u(Eigen::VectorXd X, double t);
 double Equation_Psi(Eigen::VectorXd X, Eigen::VectorXd normal, double t);
 double Equation_Varphi(Eigen::VectorXd X, Eigen::VectorXd normal, double t);
 double Equation_RBF(Eigen::VectorXd x , Eigen::VectorXd xj, double c2);
-bool Stopping(Eigen::VectorXd position);
+//bool Stopping(Eigen::VectorXd position);

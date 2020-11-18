@@ -145,7 +145,7 @@ void Stencil::Compute_ipsi(BVP bvp, double c2){
 }
 
 int Stencil::G_update(Eigen::VectorXd X, double Y, BVP bvp, double c2){
-	double H_ij ;
+	double H_ij;
 	if(AreSame(X(1),stencil_parameters[1])){
 		//South stencil
         //std::cout << "\t south \n";

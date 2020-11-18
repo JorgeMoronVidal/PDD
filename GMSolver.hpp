@@ -40,7 +40,7 @@ class GMSolver: public EMFKAC {
         /*Solves a parabolic equation on inital point X0 using FKAK formula 
         approximated by Gobet-Menozzi's integrator with N trayectories*/
         void Solve(Eigen::VectorXd X0, double T_start, double c2,
-                    Stencil stencil, std::vector<int> & G_j, 
+                    Stencil & stencil, std::vector<int> & G_j, 
                     std::vector<double> & G, double &B,  unsigned int Ntray);
         /*Convergence test for a given parabolic BVP*/
         void Test(std::string filename, Eigen::VectorXd X0, double T_start, 
